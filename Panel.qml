@@ -30,7 +30,11 @@ Panel {
   readonly property real   tempFraction: Math.min(1, Math.max(0, root.tempC / 100))
   readonly property real   fanFraction:  Math.min(1, Math.max(0, (root.fanRpm - 1299) / (6199 - 1299)))
 
+  // Status text uses the same thresholds as accentColor so text and colour
+  // always change together — temperature takes priority over CPU load.
   readonly property string cpuStatusText: {
+    if (root.tempC >= 90) return "Running hot"
+    if (root.tempC >= 70) return "Running warm"
     if (root.cpuPct >= 90) return "Heavy load"
     if (root.cpuPct >= 60) return "Moderate load"
     if (root.cpuPct >= 30) return "Light load"
