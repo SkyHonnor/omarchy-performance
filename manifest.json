@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "orviwan.performance",
+  "name": "Performance",
+  "version": "1.0.0",
+  "author": "Jon Barlow",
+  "homepage": "https://github.com/orviwan/omarchy-performance",
+  "description": "CPU usage, temperature, fan speed, and memory at a glance. Click to expand a panel with live metrics and a quick-launch button for btop.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "Performance",
+    "description": "CPU usage, temperature, fan speed, and memory",
+    "category": "System",
+    "defaultSection": "right",
+    "allowMultiple": false
+  }
+}
