@@ -23,7 +23,7 @@ A bar widget for [Omarchy](https://omarchy.org) that shows CPU and RAM usage at 
 
 ## Screenshot
 
-![Performance widget in the Omarchy bar](.github/screenshot.png)
+![Performance widget in the Omarchy bar](preview.png)
 
 ## Requirements
 
