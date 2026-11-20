@@ -37,7 +37,7 @@ Panel {
   property real   memUsed:     0
   property real   memTotal:    0
 
-  readonly property string gpuScriptPath: Qt.resolvedUrl("gpu-stats.sh").toString().replace(/^file:\/\//, "")
+  readonly property string gpuScriptPath: decodeURIComponent(Qt.resolvedUrl("gpu-stats.sh").toString().replace(/^file:\/\//, ""))
 
   readonly property real memFraction:     memTotal > 0 ? Math.min(1, memUsed / memTotal) : 0
   readonly property int  memPct:          Math.round(memFraction * 100)
@@ -255,10 +255,10 @@ Panel {
             root.cpuPct = parseInt(String(cols[1]), 10) || 0
           if (cols[0] === "memory" && cols.length >= 2) {
             root.memLabel = String(cols[1] || "")
-            var m = root.memLabel.match(/^([0-9.]+)[^0-9]+([0-9.]+)/)
+            var m = root.memLabel.match(/^([0-9]+(?:[.,][0-9]+)?)[^0-9]+([0-9]+(?:[.,][0-9]+)?)/)
             if (m) {
-              root.memUsed  = parseFloat(m[1]) || 0
-              root.memTotal = parseFloat(m[2]) || 0
+              root.memUsed  = parseFloat(m[1].replace(",", ".")) || 0
+              root.memTotal = parseFloat(m[2].replace(",", ".")) || 0
             }
           }
         }
