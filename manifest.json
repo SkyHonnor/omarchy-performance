@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "id": "skyhonnor.performance",
   "name": "Performance",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "author": "SkyHonnor",
   "homepage": "https://github.com/SkyHonnor/omarchy-performance",
-  "description": "CPU usage, RAM usage, CPU/GPU temperatures, and fan speed at a glance. Click to expand a panel with live metrics and a quick-launch button for btop.",
+  "description": "CPU, RAM, multi-GPU usage/VRAM, temperatures, and fan speed at a glance. Click to expand a live panel with a quick-launch button for btop.",
   "kinds": [
     "bar-widget"
   ],

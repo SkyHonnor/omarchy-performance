@@ -6,11 +6,13 @@
   "status.moderate": "Charge modérée",
   "status.light": "Charge légère",
   "status.idle": "Repos",
+  "status.sleeping": "En veille",
+  "section.resources": "RESSOURCES",
   "section.thermals": "TEMPÉRATURES",
-  "section.memory": "MÉMOIRE",
-  "label.cpuTemp": "CPU",
-  "label.gpuTemp": "GPU",
-  "label.fan": "Ventilateur",
-  "label.used": "Utilisée",
+  "section.fan": "VENTILATEUR",
+  "label.cpu": "CPU",
+  "label.memory": "Mémoire",
+  "label.gpu": "GPU",
+  "label.fanSpeed": "Vitesse",
   "action.openBtop": "Ouvrir dans btop"
 }

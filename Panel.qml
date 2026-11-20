@@ -28,12 +28,16 @@ Panel {
   property bool   hasCpuTemp:  false
   property int    gpuTempC:    0
   property bool   hasGpuTemp:  false
+  // Multi-GPU list: [{ vendor, busyPct, vramUsedMiB, vramTotalMiB, tempC, suspended }]
+  property var    gpus:        []
   property int    fanRpm:      0
   property int    fanMaxRpm:   5400
   property bool   hasFan:      false
   property string memLabel:    ""
   property real   memUsed:     0
   property real   memTotal:    0
+
+  readonly property string gpuScriptPath: Qt.resolvedUrl("gpu-stats.sh").toString().replace(/^file:\/\//, "")
 
   readonly property real memFraction:     memTotal > 0 ? Math.min(1, memUsed / memTotal) : 0
   readonly property int  memPct:          Math.round(memFraction * 100)
@@ -43,9 +47,18 @@ Panel {
     ? Math.min(1, Math.max(0, root.fanRpm / root.fanMaxRpm))
     : 0
 
+  readonly property int peakGpuTempC: {
+    var peak = root.hasGpuTemp ? root.gpuTempC : 0
+    for (var i = 0; i < root.gpus.length; i++) {
+      var g = root.gpus[i]
+      if (g && !g.suspended && g.tempC !== null && g.tempC > peak) peak = g.tempC
+    }
+    return peak
+  }
+
   readonly property int peakTempC: Math.max(
     root.hasCpuTemp ? root.cpuTempC : 0,
-    root.hasGpuTemp ? root.gpuTempC : 0
+    root.peakGpuTempC
   )
 
   readonly property string cpuStatusText: {
@@ -64,13 +77,77 @@ Panel {
     return root.bar.barForeground
   }
 
-  readonly property color accentColor: tempColor(root.peakTempC)
-  readonly property color memColor: {
+  function loadColor(pct) {
     if (!root.bar) return Commons.Color.foreground
-    if (root.memPct >= 92) return "#ff6b6b"
-    if (root.memPct >= 80) return "#ffcc44"
+    if (pct >= 92) return "#ff6b6b"
+    if (pct >= 80) return "#ffcc44"
     return root.bar.barForeground
   }
+
+  function formatMiB(mib) {
+    if (mib >= 1024) return (mib / 1024).toFixed(1) + "G"
+    return Math.round(mib) + "M"
+  }
+
+  function gpuDisplayLabel(gpu, index) {
+    if (root.gpus.length <= 1) return strings.t("label.gpu")
+    var vendor = gpu && gpu.vendor ? " · " + gpu.vendor : ""
+    return strings.t("label.gpu") + " " + (index + 1) + vendor
+  }
+
+  function gpuUsageText(gpu) {
+    if (!gpu) return "—"
+    if (gpu.suspended) return strings.t("status.sleeping")
+    var parts = []
+    if (gpu.busyPct >= 0) parts.push(gpu.busyPct + "%")
+    if (gpu.vramTotalMiB > 0 && gpu.vramUsedMiB >= 0)
+      parts.push(formatMiB(gpu.vramUsedMiB) + " / " + formatMiB(gpu.vramTotalMiB))
+    return parts.length > 0 ? parts.join(" · ") : "—"
+  }
+
+  function gpuUsageFraction(gpu) {
+    if (!gpu || gpu.suspended) return 0
+    if (gpu.busyPct >= 0) return Math.min(1, Math.max(0, gpu.busyPct / 100))
+    if (gpu.vramTotalMiB > 0 && gpu.vramUsedMiB >= 0)
+      return Math.min(1, Math.max(0, gpu.vramUsedMiB / gpu.vramTotalMiB))
+    return 0
+  }
+
+  function gpuUsageColor(gpu) {
+    if (!root.bar) return Commons.Color.foreground
+    if (!gpu || gpu.suspended) return root.bar.foreground
+    if (gpu.tempC !== null && gpu.tempC >= 70) return tempColor(gpu.tempC)
+    if (gpu.busyPct >= 0) return loadColor(gpu.busyPct)
+    return root.bar.foreground
+  }
+
+  function parseGpuStats(raw) {
+    var lines = String(raw || "").trim().split("\n")
+    var list = []
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i].trim()
+      if (!line) continue
+      var cols = line.split("\t")
+      if (cols.length < 6) continue
+      var busy = parseInt(cols[1], 10)
+      var vUsed = parseInt(cols[2], 10)
+      var vTotal = parseInt(cols[3], 10)
+      var temp = parseInt(cols[4], 10)
+      var susp = cols[5] === "1"
+      list.push({
+        vendor: cols[0],
+        busyPct: isFinite(busy) ? busy : -1,
+        vramUsedMiB: isFinite(vUsed) ? vUsed : -1,
+        vramTotalMiB: isFinite(vTotal) ? vTotal : -1,
+        tempC: (isFinite(temp) && temp > -50 && temp < 150) ? temp : null,
+        suspended: susp
+      })
+    }
+    root.gpus = list
+  }
+
+  readonly property color accentColor: tempColor(root.peakTempC)
+  readonly property color memColor:    loadColor(root.memPct)
 
   // ── Helpers to parse `sensors -j` ─────────────────────────────────────────
   function readTempSubfeature(feature) {
@@ -199,13 +276,32 @@ Panel {
   }
 
   Process {
+    id: gpuProc
+    command: ["bash", root.gpuScriptPath]
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.parseGpuStats(text)
+    }
+  }
+
+  Process {
     id: btopProc
     command: ["omarchy-launch-floating-terminal-with-presentation", "btop"]
   }
 
+  property bool gpuInitialized: false
+
   function refresh() {
     if (!statsProc.running)   statsProc.running   = true
     if (!sensorsProc.running) sensorsProc.running = true
+    if ((root.opened || !root.gpuInitialized) && !gpuProc.running) {
+      root.gpuInitialized = true
+      gpuProc.running = true
+    }
+  }
+
+  onOpenedChanged: {
+    if (opened) root.refresh()
   }
 
   Timer {
@@ -314,7 +410,7 @@ Panel {
     bar:           root.bar
     owner:         root
     open:          root.opened
-    contentWidth:  popup.fittedContentWidth(Style.space(280))
+    contentWidth:  popup.fittedContentWidth(Style.space(300))
     contentHeight: popup.fittedContentHeight(panelContent.implicitHeight)
 
     Column {
@@ -326,7 +422,7 @@ Panel {
         iconComponent: Component {
           Text {
             textFormat: Text.PlainText
-            text: "\u{F035B}"   // 󰍛 nf-md-chip
+            text: "\u{F035B}"   // 󰍛 nf-md-memory (chip)
             color: root.bar ? root.bar.foreground : Commons.Color.foreground
             font.family: root.bar ? root.bar.fontFamily : Style.font.family
             font.pixelSize: Style.font.display
@@ -334,14 +430,57 @@ Panel {
         }
         title:      strings.t("title")
         meta:       root.cpuStatusText
-        detail:     root.cpuPct + "%"
         foreground: root.bar ? root.bar.foreground : Commons.Color.foreground
         fontFamily: root.bar ? root.bar.fontFamily : Style.font.family
       }
 
-      ProgressBar {
-        fraction:  root.cpuPct / 100
-        fillColor: root.accentColor
+      PanelSeparator { foreground: root.bar ? root.bar.foreground : Commons.Color.foreground }
+
+      PanelSectionHeader {
+        text:       strings.t("section.resources")
+        foreground: root.bar ? root.bar.foreground : Commons.Color.foreground
+        fontFamily: root.bar ? root.bar.fontFamily : Style.font.family
+      }
+
+      Column {
+        width: parent.width
+        spacing: Style.space(10)
+
+        StatRow {
+          icon:       "\u{F035B}"   // 󰍛 CPU
+          label:      strings.t("label.cpu")
+          value:      root.cpuPct + "%"
+          valueColor: root.accentColor
+          fraction:   root.cpuPct / 100
+          fillColor:  root.accentColor
+        }
+
+        StatRow {
+          icon:       "\u{EFC5}"    //  RAM
+          label:      strings.t("label.memory")
+          value:      root.memLabel !== ""
+            ? root.memLabel + " (" + root.memPct + "%)"
+            : "—"
+          valueColor: root.memColor
+          fraction:   root.memFraction
+          fillColor:  root.memColor
+        }
+
+        Repeater {
+          model: root.gpus
+
+          StatRow {
+            required property var modelData
+            required property int index
+            visible:    modelData.suspended || modelData.busyPct >= 0 || modelData.vramTotalMiB > 0
+            icon:       "\u{F08AE}"   // 󰢮 GPU card
+            label:      root.gpuDisplayLabel(modelData, index)
+            value:      root.gpuUsageText(modelData)
+            valueColor: root.gpuUsageColor(modelData)
+            fraction:   root.gpuUsageFraction(modelData)
+            fillColor:  valueColor
+          }
+        }
       }
 
       PanelSeparator { foreground: root.bar ? root.bar.foreground : Commons.Color.foreground }
@@ -354,46 +493,58 @@ Panel {
 
       Column {
         width: parent.width
-        spacing: Style.space(8)
+        spacing: Style.space(10)
 
         StatRow {
-          label:      strings.t("label.cpuTemp")
+          icon:       "\u{F050F}"   // 󰔏 thermometer
+          label:      strings.t("label.cpu")
           value:      root.hasCpuTemp ? root.cpuTempC + "°C" : "—"
           valueColor: root.hasCpuTemp ? root.tempColor(root.cpuTempC) : (root.bar ? root.bar.foreground : Commons.Color.foreground)
           fraction:   root.hasCpuTemp ? root.cpuTempFraction : 0
           fillColor:  valueColor
         }
 
+        Repeater {
+          model: root.gpus
+
+          StatRow {
+            required property var modelData
+            required property int index
+            visible:    !modelData.suspended && modelData.tempC !== null
+            icon:       "\u{F050F}"   // 󰔏 thermometer
+            label:      root.gpuDisplayLabel(modelData, index)
+            value:      modelData.tempC !== null ? modelData.tempC + "°C" : "—"
+            valueColor: modelData.tempC !== null ? root.tempColor(modelData.tempC) : (root.bar ? root.bar.foreground : Commons.Color.foreground)
+            fraction:   modelData.tempC !== null ? Math.min(1, Math.max(0, modelData.tempC / 100)) : 0
+            fillColor:  valueColor
+          }
+        }
+
+        // Fallback if `sensors -j` detected a GPU temperature not listed via DRM
         StatRow {
-          visible:    root.hasGpuTemp
-          label:      strings.t("label.gpuTemp")
+          visible:    root.gpus.length === 0 && root.hasGpuTemp
+          icon:       "\u{F050F}"   // 󰔏 thermometer
+          label:      strings.t("label.gpu")
           value:      root.gpuTempC + "°C"
           valueColor: root.tempColor(root.gpuTempC)
           fraction:   root.gpuTempFraction
           fillColor:  valueColor
-        }
-
-        StatRow {
-          label:    strings.t("label.fan")
-          value:    root.hasFan ? root.fanRpm + " RPM" : "—"
-          fraction: root.hasFan ? root.fanFraction : 0
         }
       }
 
       PanelSeparator { foreground: root.bar ? root.bar.foreground : Commons.Color.foreground }
 
       PanelSectionHeader {
-        text:       strings.t("section.memory")
+        text:       strings.t("section.fan")
         foreground: root.bar ? root.bar.foreground : Commons.Color.foreground
         fontFamily: root.bar ? root.bar.fontFamily : Style.font.family
       }
 
       StatRow {
-        label:      strings.t("label.used")
-        value:      root.memLabel !== "" ? root.memLabel : "—"
-        valueColor: root.memColor
-        fraction:   root.memFraction
-        fillColor:  root.memColor
+        icon:     "\u{F0210}"       // 󰈐 fan
+        label:    strings.t("label.fanSpeed")
+        value:    root.hasFan ? root.fanRpm + " RPM" : "—"
+        fraction: root.hasFan ? root.fanFraction : 0
       }
 
       PanelSeparator { foreground: root.bar ? root.bar.foreground : Commons.Color.foreground }
@@ -446,6 +597,7 @@ Panel {
   }
 
   component StatRow: Item {
+    property string icon:       ""
     property string label:      ""
     property string value:      ""
     property color  valueColor: root.bar ? root.bar.foreground : Commons.Color.foreground
@@ -453,28 +605,46 @@ Panel {
     property color  fillColor:  root.bar ? root.bar.foreground : Commons.Color.foreground
 
     width: parent ? parent.width : 0
-    implicitHeight: labelText.implicitHeight + Style.space(5) + bar.implicitHeight
+    implicitHeight: Math.max(labelRow.implicitHeight, valueText.implicitHeight) + Style.space(5) + bar.implicitHeight
 
-    Text {
-      id: labelText
-      textFormat: Text.PlainText
-      text: parent.label
-      color: root.bar
-        ? Qt.rgba(root.bar.foreground.r, root.bar.foreground.g, root.bar.foreground.b, 0.6)
-        : "#99ffffff"
-      font.family: root.bar ? root.bar.fontFamily : Style.font.family
-      font.pixelSize: Style.font.bodySmall
+    Row {
+      id: labelRow
+      spacing: Style.space(6)
       anchors { left: parent.left; top: parent.top }
+
+      Text {
+        visible: parent.parent.icon !== ""
+        textFormat: Text.PlainText
+        text: parent.parent.icon
+        color: root.bar
+          ? Qt.rgba(root.bar.foreground.r, root.bar.foreground.g, root.bar.foreground.b, 0.8)
+          : "#ccffffff"
+        font.family: root.bar ? root.bar.fontFamily : Style.font.family
+        font.pixelSize: Style.font.body
+        anchors.verticalCenter: parent.verticalCenter
+      }
+
+      Text {
+        textFormat: Text.PlainText
+        text: parent.parent.label
+        color: root.bar
+          ? Qt.rgba(root.bar.foreground.r, root.bar.foreground.g, root.bar.foreground.b, 0.6)
+          : "#99ffffff"
+        font.family: root.bar ? root.bar.fontFamily : Style.font.family
+        font.pixelSize: Style.font.bodySmall
+        anchors.verticalCenter: parent.verticalCenter
+      }
     }
 
     Text {
+      id: valueText
       textFormat: Text.PlainText
       text: parent.value
       color: parent.valueColor
       font.family: root.bar ? root.bar.fontFamily : Style.font.family
       font.pixelSize: Style.font.bodySmall
       font.bold: true
-      anchors { right: parent.right; top: parent.top }
+      anchors { right: parent.right; verticalCenter: labelRow.verticalCenter }
     }
 
     ProgressBar {
