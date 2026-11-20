@@ -28,7 +28,7 @@ Panel {
   property bool   hasCpuTemp:  false
   property int    gpuTempC:    0
   property bool   hasGpuTemp:  false
-  // Multi-GPU list: [{ vendor, busyPct, vramUsedMiB, vramTotalMiB, tempC, suspended }]
+  // Multi-GPU list: [{ vendor, busyPct, vramUsedMiB, vramTotalMiB, tempC, suspended, curFreqMHz, maxFreqMHz }]
   property var    gpus:        []
   property int    fanRpm:      0
   property int    fanMaxRpm:   5400
@@ -102,6 +102,12 @@ Panel {
     if (gpu.busyPct >= 0) parts.push(gpu.busyPct + "%")
     if (gpu.vramTotalMiB > 0 && gpu.vramUsedMiB >= 0)
       parts.push(formatMiB(gpu.vramUsedMiB) + " / " + formatMiB(gpu.vramTotalMiB))
+    if (parts.length === 0 && gpu.curFreqMHz >= 0) {
+      var freqStr = gpu.maxFreqMHz > 0
+        ? gpu.curFreqMHz + " / " + gpu.maxFreqMHz + " MHz"
+        : gpu.curFreqMHz + " MHz"
+      parts.push(strings.t("label.gpuClock") + " " + freqStr)
+    }
     return parts.length > 0 ? parts.join(" · ") : "—"
   }
 
@@ -110,6 +116,8 @@ Panel {
     if (gpu.busyPct >= 0) return Math.min(1, Math.max(0, gpu.busyPct / 100))
     if (gpu.vramTotalMiB > 0 && gpu.vramUsedMiB >= 0)
       return Math.min(1, Math.max(0, gpu.vramUsedMiB / gpu.vramTotalMiB))
+    if (gpu.curFreqMHz >= 0 && gpu.maxFreqMHz > 0)
+      return Math.min(1, Math.max(0, gpu.curFreqMHz / gpu.maxFreqMHz))
     return 0
   }
 
@@ -121,6 +129,13 @@ Panel {
     return root.bar.foreground
   }
 
+  function parseOptionalInt(raw) {
+    var s = String(raw || "").trim()
+    if (s === "" || s === "NA") return null
+    var n = parseInt(s, 10)
+    return isFinite(n) ? n : null
+  }
+
   function parseGpuStats(raw) {
     var lines = String(raw || "").trim().split("\n")
     var list = []
@@ -129,18 +144,22 @@ Panel {
       if (!line) continue
       var cols = line.split("\t")
       if (cols.length < 6) continue
-      var busy = parseInt(cols[1], 10)
-      var vUsed = parseInt(cols[2], 10)
-      var vTotal = parseInt(cols[3], 10)
-      var temp = parseInt(cols[4], 10)
+      var busy = parseOptionalInt(cols[1])
+      var vUsed = parseOptionalInt(cols[2])
+      var vTotal = parseOptionalInt(cols[3])
+      var temp = parseOptionalInt(cols[4])
       var susp = cols[5] === "1"
+      var curFreq = cols.length >= 7 ? parseOptionalInt(cols[6]) : null
+      var maxFreq = cols.length >= 8 ? parseOptionalInt(cols[7]) : null
       list.push({
         vendor: cols[0],
-        busyPct: isFinite(busy) ? busy : -1,
-        vramUsedMiB: isFinite(vUsed) ? vUsed : -1,
-        vramTotalMiB: isFinite(vTotal) ? vTotal : -1,
-        tempC: (isFinite(temp) && temp > -50 && temp < 150) ? temp : null,
-        suspended: susp
+        busyPct: (busy !== null && busy >= 0 && busy <= 100) ? busy : -1,
+        vramUsedMiB: (vUsed !== null && vUsed >= 0) ? vUsed : -1,
+        vramTotalMiB: (vTotal !== null && vTotal > 0) ? vTotal : -1,
+        tempC: (temp !== null && temp >= 0 && temp < 150) ? temp : null,
+        suspended: susp,
+        curFreqMHz: (curFreq !== null && curFreq >= 0) ? curFreq : -1,
+        maxFreqMHz: (maxFreq !== null && maxFreq > 0) ? maxFreq : -1
       })
     }
     root.gpus = list
@@ -161,14 +180,32 @@ Panel {
     return null
   }
 
+  function clearSensorReadings() {
+    root.hasCpuTemp = false
+    root.cpuTempC = 0
+    root.hasGpuTemp = false
+    root.gpuTempC = 0
+    root.hasFan = false
+    root.fanRpm = 0
+  }
+
   function parseSensorsJson(raw) {
-    var data
-    try {
-      data = JSON.parse(raw || "{}")
-    } catch (e) {
+    var trimmed = String(raw || "").trim()
+    if (!trimmed) {
+      clearSensorReadings()
       return
     }
-    if (!data || typeof data !== "object") return
+    var data
+    try {
+      data = JSON.parse(trimmed)
+    } catch (e) {
+      clearSensorReadings()
+      return
+    }
+    if (!data || typeof data !== "object") {
+      clearSensorReadings()
+      return
+    }
 
     var cpuTemp = null
     var cpuPriority = 99
@@ -229,15 +266,24 @@ Panel {
     if (cpuTemp !== null) {
       root.cpuTempC = Math.round(cpuTemp)
       root.hasCpuTemp = true
+    } else {
+      root.cpuTempC = 0
+      root.hasCpuTemp = false
     }
     if (gpuTemp !== null) {
       root.gpuTempC = Math.round(gpuTemp)
       root.hasGpuTemp = true
+    } else {
+      root.gpuTempC = 0
+      root.hasGpuTemp = false
     }
     if (fanInput !== null) {
       root.fanRpm = Math.round(fanInput)
       if (fanMax !== null) root.fanMaxRpm = Math.round(fanMax)
       root.hasFan = true
+    } else {
+      root.fanRpm = 0
+      root.hasFan = false
     }
   }
 
@@ -268,19 +314,31 @@ Panel {
 
   Process {
     id: sensorsProc
+    property bool gotOutput: false
     command: ["sensors", "-j"]
+    onStarted: gotOutput = false
+    onExited: if (!gotOutput) root.clearSensorReadings()
     stdout: StdioCollector {
       waitForEnd: true
-      onStreamFinished: root.parseSensorsJson(text)
+      onStreamFinished: {
+        sensorsProc.gotOutput = true
+        root.parseSensorsJson(text)
+      }
     }
   }
 
   Process {
     id: gpuProc
+    property bool gotOutput: false
     command: ["bash", root.gpuScriptPath]
+    onStarted: gotOutput = false
+    onExited: if (!gotOutput) root.gpus = []
     stdout: StdioCollector {
       waitForEnd: true
-      onStreamFinished: root.parseGpuStats(text)
+      onStreamFinished: {
+        gpuProc.gotOutput = true
+        root.parseGpuStats(text)
+      }
     }
   }
 
@@ -472,7 +530,7 @@ Panel {
           StatRow {
             required property var modelData
             required property int index
-            visible:    modelData.suspended || modelData.busyPct >= 0 || modelData.vramTotalMiB > 0
+            visible:    modelData.suspended || modelData.busyPct >= 0 || modelData.vramTotalMiB > 0 || modelData.curFreqMHz >= 0
             icon:       "\u{F08AE}"   // 󰢮 GPU card
             label:      root.gpuDisplayLabel(modelData, index)
             value:      root.gpuUsageText(modelData)

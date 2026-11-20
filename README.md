@@ -28,11 +28,11 @@ A bar widget for [Omarchy](https://omarchy.org) that shows CPU and RAM usage at 
 ## Requirements
 
 - [Omarchy](https://omarchy.org) 4.x (Quattro)
-- `lm_sensors` — for CPU temperature and fan readings
+- `lm_sensors` — for CPU temperature and fan readings:
   ```bash
   omarchy pkg add lm_sensors
-  sudo sensors-detect --auto
   ```
+  *(Note: If your hardware does not expose sensor readings by default, see the [lm-sensors documentation](https://github.com/lm-sensors/lm-sensors/blob/master/prog/detect/sensors-detect.8#L45-L69) for device troubleshooting.)*
 - `btop` — for the "Open in btop" button (included by default in Omarchy)
 - `nvidia-smi` *(optional)* — for NVIDIA GPU utilization, VRAM, and temperature
 
@@ -55,7 +55,7 @@ The plugin automatically detects sensors and GPUs without manual configuration:
 | Metric | Supported sources |
 |--------|-------------------|
 | CPU temperature | `k10temp` (`Tctl` / `Tdie`), `coretemp` (`Package id 0`), `dell_smm` (`CPU`), `acpitz` (`temp1`) |
-| GPU usage, VRAM & temp | **AMD** (`/sys/class/drm/card*/device`), **NVIDIA** (`nvidia-smi`), **Intel** (`/sys/class/drm/card*`) — supports single and multi-GPU systems |
+| GPU metrics & temp | **AMD** (usage, VRAM & temp via `/sys/class/drm/card*/device`), **NVIDIA** (usage, VRAM & temp via `nvidia-smi -i <pci-id>` for awake devices only), **Intel** (clock speed & temp via `/sys/class/drm/card*`) — supports single and multi-GPU systems |
 | Fan speed | First available `fan*_input` via `sensors -j` (with dynamic `fan*_max` scaling) |
 
 To customise sensor priority or add another chip, edit `parseSensorsJson()` in `Panel.qml` or `gpu-stats.sh`.

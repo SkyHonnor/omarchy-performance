@@ -1,8 +1,8 @@
 #!/bin/bash
 # Read-only multi-GPU metrics collector for skyhonnor.performance.
 # Outputs one TSV line per detected GPU:
-#   vendor <TAB> busyPct <TAB> vramUsedMiB <TAB> vramTotalMiB <TAB> tempC <TAB> suspended
-# Unknown numeric values are emitted as -1; suspended is 0 or 1.
+#   vendor <TAB> busyPct <TAB> vramUsedMiB <TAB> vramTotalMiB <TAB> tempC <TAB> suspended <TAB> curFreqMHz <TAB> maxFreqMHz
+# Unavailable numeric values are emitted as NA; suspended is 0 or 1.
 
 shopt -s nullglob
 
@@ -27,8 +27,8 @@ read_hwmon_temp_c() {
   return 1
 }
 
-active_nvidia=0
-suspended_nvidia=0
+declare -a awake_nvidia_pci=()
+declare -a suspended_nvidia_pci=()
 
 for card in /sys/class/drm/card[0-9]*; do
   name="${card##*/}"
@@ -43,89 +43,102 @@ for card in /sys/class/drm/card[0-9]*; do
   status="active"
   if [[ -r $dev/power/runtime_status ]]; then
     status=$(<"$dev/power/runtime_status")
+    status="${status,,}"
     status="${status//[[:space:]]/}"
   fi
 
   case "$vendor" in
     0x1002)
       if [[ $status == "suspended" ]]; then
-        printf 'AMD\t-1\t-1\t-1\t-1\t1\n'
+        printf 'AMD\tNA\tNA\tNA\tNA\t1\tNA\tNA\n'
         continue
       fi
-      busy=-1
-      vram_used=-1
-      vram_total=-1
-      temp_c=-1
+      busy="NA"
+      vram_used="NA"
+      vram_total="NA"
+      temp_c="NA"
       if val=$(read_int "$dev/gpu_busy_percent"); then busy="$val"; fi
       if val=$(read_int "$dev/mem_info_vram_used"); then vram_used=$(( val / 1048576 )); fi
       if val=$(read_int "$dev/mem_info_vram_total"); then vram_total=$(( val / 1048576 )); fi
       if val=$(read_hwmon_temp_c "$dev"); then temp_c="$val"; fi
-      if (( busy >= 0 || vram_total > 0 || temp_c >= 0 )); then
-        printf 'AMD\t%d\t%d\t%d\t%d\t0\n' "$busy" "$vram_used" "$vram_total" "$temp_c"
+      if [[ $busy != "NA" || $vram_total != "NA" || $temp_c != "NA" ]]; then
+        printf 'AMD\t%s\t%s\t%s\t%s\t0\tNA\tNA\n' "$busy" "$vram_used" "$vram_total" "$temp_c"
       fi
       ;;
 
     0x10de)
+      canonical_dev="$(readlink -f "$dev" 2>/dev/null || echo "$dev")"
+      pci_id="${canonical_dev##*/}"
       if [[ $status == "suspended" ]]; then
-        suspended_nvidia=$(( suspended_nvidia + 1 ))
+        suspended_nvidia_pci+=("$pci_id")
       else
-        active_nvidia=$(( active_nvidia + 1 ))
+        awake_nvidia_pci+=("$pci_id")
       fi
       ;;
 
     0x8086)
       if [[ $status == "suspended" ]]; then
-        printf 'Intel\t-1\t-1\t-1\t-1\t1\n'
+        printf 'Intel\tNA\tNA\tNA\tNA\t1\tNA\tNA\n'
         continue
       fi
-      busy=-1
-      temp_c=-1
+      temp_c="NA"
+      cur_freq="NA"
+      max_freq="NA"
       if val=$(read_hwmon_temp_c "$dev"); then temp_c="$val"; fi
-      if cur=$(read_int "$card/gt_cur_freq_mhz") && max=$(read_int "$card/gt_max_freq_mhz") && (( max > 0 )); then
-        busy=$(( cur * 100 / max ))
-        (( busy > 100 )) && busy=100
-      elif cur=$(read_int "$card/gt/gt0/rps_cur_freq_mhz") && max=$(read_int "$card/gt/gt0/rps_max_freq_mhz") && (( max > 0 )); then
-        busy=$(( cur * 100 / max ))
-        (( busy > 100 )) && busy=100
-      fi
-      if (( busy >= 0 || temp_c >= 0 )); then
-        printf 'Intel\t%d\t-1\t-1\t%d\t0\n' "$busy" "$temp_c"
+      if cur=$(read_int "$card/gt_cur_freq_mhz"); then cur_freq="$cur"; fi
+      if max=$(read_int "$card/gt_max_freq_mhz"); then max_freq="$max"; fi
+      if [[ $cur_freq == "NA" ]] && cur=$(read_int "$card/gt/gt0/rps_cur_freq_mhz"); then cur_freq="$cur"; fi
+      if [[ $max_freq == "NA" ]] && max=$(read_int "$card/gt/gt0/rps_max_freq_mhz"); then max_freq="$max"; fi
+
+      if [[ $cur_freq != "NA" || $temp_c != "NA" ]]; then
+        printf 'Intel\tNA\tNA\tNA\t%s\t0\t%s\t%s\n' "$temp_c" "$cur_freq" "$max_freq"
       fi
       ;;
   esac
 done
 
-# Query NVIDIA GPUs via nvidia-smi only when at least one is awake (avoids waking D3cold dGPUs).
-if (( active_nvidia > 0 )) && command -v nvidia-smi >/dev/null 2>&1; then
-  while IFS=, read -r util mem_used mem_total temp; do
-    util="${util//[[:space:]]/}"
-    mem_used="${mem_used//[[:space:]]/}"
-    mem_total="${mem_total//[[:space:]]/}"
-    temp="${temp//[[:space:]]/}"
-    [[ $util =~ ^[0-9]+$ ]] || util=-1
-    [[ $mem_used =~ ^[0-9]+$ ]] || mem_used=-1
-    [[ $mem_total =~ ^[0-9]+$ ]] || mem_total=-1
-    [[ $temp =~ ^-?[0-9]+$ ]] || temp=-1
-    printf 'NVIDIA\t%s\t%s\t%s\t%s\t0\n' "$util" "$mem_used" "$mem_total" "$temp"
-  done < <(nvidia-smi --query-gpu=utilization.gpu,memory.used,memory.total,temperature.gpu --format=csv,noheader,nounits 2>/dev/null)
-else
-  # Fallback: report sleeping NVIDIA dGPUs (or active ones via nouveau hwmon if no nvidia-smi)
-  for (( i = 0; i < suspended_nvidia; i++ )); do
-    printf 'NVIDIA\t-1\t-1\t-1\t-1\t1\n'
+# Query only confirmed-awake NVIDIA GPUs by PCI bus ID (-i) so suspended dGPUs stay asleep.
+if (( ${#awake_nvidia_pci[@]} > 0 )) && command -v nvidia-smi >/dev/null 2>&1; then
+  for pci_id in "${awake_nvidia_pci[@]}"; do
+    query_out="$(nvidia-smi -i "$pci_id" --query-gpu=utilization.gpu,memory.used,memory.total,temperature.gpu --format=csv,noheader,nounits 2>/dev/null || true)"
+    if [[ -n $query_out ]]; then
+      while IFS=, read -r util mem_used mem_total temp; do
+        util="${util//[[:space:]]/}"
+        mem_used="${mem_used//[[:space:]]/}"
+        mem_total="${mem_total//[[:space:]]/}"
+        temp="${temp//[[:space:]]/}"
+        [[ $util =~ ^[0-9]+$ ]] || util="NA"
+        [[ $mem_used =~ ^[0-9]+$ ]] || mem_used="NA"
+        [[ $mem_total =~ ^[0-9]+$ ]] || mem_total="NA"
+        [[ $temp =~ ^[0-9]+$ ]] || temp="NA"
+        printf 'NVIDIA\t%s\t%s\t%s\t%s\t0\tNA\tNA\n' "$util" "$mem_used" "$mem_total" "$temp"
+      done <<< "$query_out"
+    fi
   done
-  if (( active_nvidia > 0 )); then
-    for card in /sys/class/drm/card[0-9]*; do
-      name="${card##*/}"
-      [[ $name =~ ^card[0-9]+$ ]] || continue
-      dev="$card/device"
-      [[ -r $dev/vendor ]] || continue
-      v=$(<"$dev/vendor")
-      [[ ${v,,} == "0x10de" ]] || continue
-      temp_c=-1
-      if val=$(read_hwmon_temp_c "$dev"); then temp_c="$val"; fi
-      if (( temp_c >= 0 )); then
-        printf 'NVIDIA\t-1\t-1\t-1\t%d\t0\n' "$temp_c"
-      fi
-    done
-  fi
+elif (( ${#awake_nvidia_pci[@]} > 0 )); then
+  # Fallback for open nouveau driver when nvidia-smi is not installed
+  for card in /sys/class/drm/card[0-9]*; do
+    name="${card##*/}"
+    [[ $name =~ ^card[0-9]+$ ]] || continue
+    dev="$card/device"
+    [[ -r $dev/vendor ]] || continue
+    v=$(<"$dev/vendor")
+    [[ ${v,,} == "0x10de" ]] || continue
+    status="active"
+    if [[ -r $dev/power/runtime_status ]]; then
+      status=$(<"$dev/power/runtime_status")
+      status="${status,,}"
+      status="${status//[[:space:]]/}"
+    fi
+    [[ $status == "suspended" ]] && continue
+    temp_c="NA"
+    if val=$(read_hwmon_temp_c "$dev"); then temp_c="$val"; fi
+    if [[ $temp_c != "NA" ]]; then
+      printf 'NVIDIA\tNA\tNA\tNA\t%s\t0\tNA\tNA\n' "$temp_c"
+    fi
+  done
 fi
+
+for pci_id in "${suspended_nvidia_pci[@]}"; do
+  printf 'NVIDIA\tNA\tNA\tNA\tNA\t1\tNA\tNA\n'
+done

@@ -13,6 +13,7 @@
   "label.cpu": "CPU",
   "label.memory": "Memory",
   "label.gpu": "GPU",
+  "label.gpuClock": "Clock",
   "label.fanSpeed": "Speed",
   "action.openBtop": "Open in btop"
 }
