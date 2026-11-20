@@ -1,0 +1,16 @@
+{
+  "title": "Performance",
+  "status.hot": "Running hot",
+  "status.warm": "Running warm",
+  "status.heavy": "Heavy load",
+  "status.moderate": "Moderate load",
+  "status.light": "Light load",
+  "status.idle": "Idle",
+  "section.thermals": "THERMALS",
+  "section.memory": "MEMORY",
+  "label.cpuTemp": "CPU",
+  "label.gpuTemp": "GPU",
+  "label.fan": "Fan",
+  "label.used": "Used",
+  "action.openBtop": "Open in btop"
+}

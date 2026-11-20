@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "id": "orviwan.performance",
+  "id": "skyhonnor.performance",
   "name": "Performance",
-  "version": "1.0.0",
-  "author": "Jon Barlow",
-  "homepage": "https://github.com/orviwan/omarchy-performance",
-  "description": "CPU usage, temperature, fan speed, and memory at a glance. Click to expand a panel with live metrics and a quick-launch button for btop.",
+  "version": "1.1.0",
+  "author": "SkyHonnor",
+  "homepage": "https://github.com/SkyHonnor/omarchy-performance",
+  "description": "CPU usage, RAM usage, CPU/GPU temperatures, and fan speed at a glance. Click to expand a panel with live metrics and a quick-launch button for btop.",
   "kinds": [
     "bar-widget"
   ],
@@ -14,7 +14,7 @@
   },
   "barWidget": {
     "displayName": "Performance",
-    "description": "CPU usage, temperature, fan speed, and memory",
+    "description": "CPU usage, RAM usage, temperatures, and fan speed",
     "category": "System",
     "defaultSection": "right",
     "allowMultiple": false

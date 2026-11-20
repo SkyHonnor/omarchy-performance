@@ -1,72 +1,66 @@
 # omarchy-performance
 
-A bar widget for [Omarchy](https://omarchy.org) that shows CPU usage at a glance and expands into a live performance panel — modelled on the built-in battery widget.
+A bar widget for [Omarchy](https://omarchy.org) that shows CPU and RAM usage at a glance and expands into a live performance panel — modelled on the built-in battery widget.
+
+> **Credit:** Forked from [orviwan/omarchy-performance](https://github.com/orviwan/omarchy-performance) by Jon Barlow.
 
 ## Features
 
-- **Bar button** — shows CPU% with a chip icon, colour-coded by temperature  
-  - Normal → Amber (≥ 70 °C) → Red (≥ 90 °C)
+- **Bar button** — shows CPU% and RAM `x% (y.yG)` with chip and memory icons, colour-coded automatically:
+  - CPU (by peak temperature): Normal → Amber (≥ 70 °C) → Red (≥ 90 °C)
+  - RAM (by usage): Normal → Amber (≥ 80 %) → Red (≥ 92 %)
 - **Click to open panel** with:
   - CPU % hero with animated progress bar
-  - Temperature reading + bar
-  - Fan RPM + bar
+  - CPU temperature reading + bar
+  - GPU temperature reading + bar (shown automatically when detected)
+  - Fan RPM + bar (scales dynamically to the sensor's max RPM)
   - Memory used / total + bar
   - **Open in btop** button for deep inspection
+- **Automatic hardware detection** via `sensors -j` (AMD `k10temp`, Intel `coretemp`, Dell `dell_smm`, `acpitz`, AMD/NVIDIA/Radeon GPU sensors, and generic fan sensors)
+- **Built-in translations** (`en` and `fr`), following Omarchy's language setting live
+- **IPC support** (`omarchy-shell skyhonnor.performance toggle`)
 - Polls every **4 s** at rest, **2 s** while the panel is open
-- Hot-reloads; no shell restart needed
-
-## Screenshot
-
-![Performance widget in the Omarchy bar](.github/screenshot.png)
 
 ## Requirements
 
 - [Omarchy](https://omarchy.org) 4.x (Quattro)
-- `lm_sensors` — for temperature and fan readings  
+- `lm_sensors` — for temperature and fan readings
   ```bash
   omarchy pkg add lm_sensors
   sudo sensors-detect --auto
   ```
-- `btop` — for the "Open in btop" button  
-  ```bash
-  omarchy pkg add btop
-  ```
-
-> **Note:** Fan readings use the `applesmc` driver label `Right Side`, which is
-> present on Apple hardware running Linux. On other machines the fan bar will
-> show `—`; see [Customising sensor labels](#customising-sensor-labels) below.
+- `btop` — for the "Open in btop" button (included by default in Omarchy)
 
 ## Installation
 
 ```bash
-omarchy plugin add https://github.com/orviwan/omarchy-performance.git --enable
+omarchy plugin add https://github.com/SkyHonnor/omarchy-performance.git --enable
 ```
 
 The plugin is placed to the right of the bar by default (before the battery/power widget). Move it with:
 
 ```bash
-omarchy bar move orviwan.performance --section right
+omarchy bar move skyhonnor.performance --section left
 ```
 
-## Customising sensor labels
+## Sensor detection
 
-The plugin reads two fields from `sensors` output:
+The plugin reads `sensors -j` directly and picks the best available sensors automatically:
 
-| Field | Default label | What it reads |
-|-------|--------------|---------------|
-| CPU temperature | `Package id 0:` | Intel package temperature |
-| Fan speed | `Right Side` | Apple SMC right fan (applesmc) |
+| Metric | Supported sensors |
+|--------|-------------------|
+| CPU temperature | `k10temp` (`Tctl` / `Tdie`), `coretemp` (`Package id 0`), `dell_smm` (`CPU`), `acpitz` (`temp1`) |
+| GPU temperature | `amdgpu` / `radeon` / `nouveau` (`edge`, `junction`, `temp1`) |
+| Fan speed | First available `fan*_input` (with dynamic `fan*_max` scaling) |
 
-To adapt for other hardware, edit `Panel.qml` and change the `awk` patterns in `sensorsProc.command` to match your own `sensors` output.
-
-Run `sensors` in a terminal to find the correct labels for your machine.
+To customise sensor priority or add another chip, edit `parseSensorsJson()` in `Panel.qml`.
 
 ## Uninstall
 
 ```bash
-omarchy plugin remove orviwan.performance
+omarchy plugin remove skyhonnor.performance
 ```
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE). Originally created by [Jon Barlow (orviwan)](https://github.com/orviwan/omarchy-performance).

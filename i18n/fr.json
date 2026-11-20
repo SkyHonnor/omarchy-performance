@@ -1,0 +1,16 @@
+{
+  "title": "Performance",
+  "status.hot": "Surchauffe",
+  "status.warm": "Température élevée",
+  "status.heavy": "Charge élevée",
+  "status.moderate": "Charge modérée",
+  "status.light": "Charge légère",
+  "status.idle": "Repos",
+  "section.thermals": "TEMPÉRATURES",
+  "section.memory": "MÉMOIRE",
+  "label.cpuTemp": "CPU",
+  "label.gpuTemp": "GPU",
+  "label.fan": "Ventilateur",
+  "label.used": "Utilisée",
+  "action.openBtop": "Ouvrir dans btop"
+}
