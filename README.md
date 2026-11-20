@@ -21,6 +21,10 @@ A bar widget for [Omarchy](https://omarchy.org) that shows CPU and RAM usage at 
 - **IPC support** (`omarchy-shell skyhonnor.performance toggle`)
 - Polls every **4 s** at rest, **2 s** while the panel is open (GPU stats polled on startup and while the panel is open)
 
+## Screenshot
+
+![Performance widget in the Omarchy bar](.github/screenshot.png)
+
 ## Requirements
 
 - [Omarchy](https://omarchy.org) 4.x (Quattro)
