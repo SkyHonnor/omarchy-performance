@@ -430,7 +430,7 @@ Panel {
         }
       }
 
-      // RAM% + memory stick icon
+      // RAM usage + memory stick icon
       Row {
         visible: !button.vertical
         spacing: Style.space(4)
@@ -439,8 +439,8 @@ Panel {
         Text {
           textFormat: Text.PlainText
           text: root.memTotal > 0
-            ? root.memPct + "% (" + root.memUsed.toFixed(1) + "G)"
-            : root.memPct + "%"
+            ? root.memUsed.toFixed(1) + "G"
+            : "—"
           font.family: button.fontFamily
           font.pixelSize: button.fontSize
           color: root.memColor
