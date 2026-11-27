@@ -168,6 +168,15 @@ Panel {
   readonly property color accentColor: tempColor(root.peakTempC)
   readonly property color memColor:    loadColor(root.memPct)
 
+  function barMetricColor(metricColor) {
+    if (!root.bar) return metricColor
+    const foreground = root.bar.barForeground
+    const lightBar = 0.2126 * foreground.r + 0.7152 * foreground.g + 0.0722 * foreground.b < 0.5
+    if (lightBar && Qt.colorEqual(metricColor, "#ffcc44")) return "#805000"
+    if (lightBar && Qt.colorEqual(metricColor, "#ff6b6b")) return "#a32323"
+    return metricColor
+  }
+
   // ── Helpers to parse `sensors -j` ─────────────────────────────────────────
   function readTempSubfeature(feature) {
     if (!feature || typeof feature !== "object") return null
@@ -414,7 +423,7 @@ Panel {
           text: root.cpuPct + "%"
           font.family: button.fontFamily
           font.pixelSize: button.fontSize
-          color: root.accentColor
+          color: root.barMetricColor(root.accentColor)
           y: (parent.height - height) / 2 + button.figureOffsetY
           renderType: Text.NativeRendering
         }
@@ -426,7 +435,7 @@ Panel {
           fontFamily: button.fontFamily
           fontSize: button.fontSize
           paintedSize: Style.bar.iconSize
-          color: root.accentColor
+          color: root.barMetricColor(root.accentColor)
         }
       }
 
@@ -443,7 +452,7 @@ Panel {
             : root.memPct + "%"
           font.family: button.fontFamily
           font.pixelSize: button.fontSize
-          color: root.memColor
+          color: root.barMetricColor(root.memColor)
           y: (parent.height - height) / 2 + button.figureOffsetY
           renderType: Text.NativeRendering
         }
@@ -455,7 +464,7 @@ Panel {
           fontFamily: button.fontFamily
           fontSize: button.fontSize
           paintedSize: Style.bar.iconSize
-          color: root.memColor
+          color: root.barMetricColor(root.memColor)
         }
       }
     }
